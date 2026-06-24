@@ -32,16 +32,20 @@ jobs:
         run: pip install opencv-python-headless numpy
 
       - name: Run image processor
+        # Đổi tên file đầu ra thuần túy theo job_id
         run: |
-          python process.py "${{ inputs.image_url }}" "result_${{ inputs.job_id }}.jpg"
+          python process.py "${{ inputs.image_url }}" "${{ inputs.job_id }}.jpg"
 
       - name: Upload result to GitHub Release
         id: upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FILENAME="result_${{ inputs.job_id }}.jpg"
-          TAG="result-$(date +%Y%m%d-%H%M%S)-${{ inputs.job_id }}"
+          FILENAME="${{ inputs.job_id }}.jpg"
+          TAG="${{ inputs.job_id }}"
+
+          # Xóa release cũ nếu trùng job_id để không bị lỗi trùng tag
+          gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag || true
 
           # Tạo release mới rồi upload file ảnh vào đó
           gh release create "$TAG" "$FILENAME" \
@@ -49,7 +53,7 @@ jobs:
             --notes "Ảnh được xử lý từ: ${{ inputs.image_url }}" \
             --repo "${{ github.repository }}"
 
-          # Lấy link download trực tiếp
+          # Cấu trúc link tĩnh siêu ngắn gọn theo job_id
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${FILENAME}"
           echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
           echo ""
