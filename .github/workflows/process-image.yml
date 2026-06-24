@@ -1,5 +1,4 @@
 name: Process Image
-
 on:
   workflow_dispatch:
     inputs:
@@ -12,56 +11,41 @@ on:
         required: false
         default: "output"
         type: string
-
 jobs:
   process:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # cần để tạo Release và upload asset
-
+      contents: write
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
         with:
-          python-version: "3.11"
-
+          path: ~/.cache/pip
+          key: pip-opencv-numpy-v1
       - name: Install dependencies
-        run: pip install opencv-python-headless numpy
-
+        run: pip install --quiet opencv-python-headless numpy
       - name: Run image processor
-        # Đổi tên file đầu ra thuần túy theo job_id
         run: |
-          python process.py "${{ inputs.image_url }}" "${{ inputs.job_id }}.jpg"
-
+          python process.py "${{ inputs.image_url }}" "result_${{ inputs.job_id }}.jpg"
       - name: Upload result to GitHub Release
         id: upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FILENAME="${{ inputs.job_id }}.jpg"
+          FILENAME="result_${{ inputs.job_id }}.jpg"
           TAG="${{ inputs.job_id }}"
 
-          # Xóa release cũ nếu trùng job_id để không bị lỗi trùng tag
-          gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag || true
+          # Xoá release/tag cũ nếu đã tồn tại (cho phép chạy lại cùng job_id)
+          gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
 
-          # Tạo release mới rồi upload file ảnh vào đó
           gh release create "$TAG" "$FILENAME" \
             --title "Result: ${{ inputs.job_id }}" \
             --notes "Ảnh được xử lý từ: ${{ inputs.image_url }}" \
             --repo "${{ github.repository }}"
-
-          # Cấu trúc link tĩnh siêu ngắn gọn theo job_id
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${FILENAME}"
           echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
-          echo ""
-          echo "============================================"
-          echo "✅ LINK ẢNH KẾT QUẢ:"
-          echo "$DOWNLOAD_URL"
-          echo "============================================"
-
       - name: Print result link
         run: |
-          echo "🔗 Link tải ảnh: ${{ steps.upload.outputs.download_url }}"
+          echo "${{ steps.upload.outputs.download_url }}"
