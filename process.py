@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-from collections import Counter
 import urllib.request
 import sys
 import os
@@ -17,6 +16,13 @@ HOTLINE_PNG = os.path.join(ASSETS_DIR, "hotline.png")
 # =========================
 LOGO_BOX_LEFT  = (24, 587, 440, 680)   # layout trái (mẫu Hải Âu)
 LOGO_BOX_RIGHT = (540, 420, 775, 482)  # layout phải (mẫu khác)
+
+# =========================
+# TỌA ĐỘ BANNER (cố định, đo thực tế từ ảnh 905x1280)
+# x: 24 -> 878, y: 1184 -> 1251
+# Gradient từ xanh đậm (trái) sang xanh dương (phải)
+# =========================
+BANNER_BOX = (24, 1184, 878, 1251)
 
 # =========================
 # HÀM TIỆN ÍCH
@@ -37,16 +43,12 @@ def paste_rgba(base_img, overlay_rgba, x, y):
     else:
         roi[:] = ov
     base_img[y:y+h, x:x+w] = roi
-
-
 def fit_resize(overlay, max_w, max_h):
     oh, ow = overlay.shape[:2]
     scale = min(max_w / ow, max_h / oh)
     new_w = max(1, int(round(ow * scale)))
     new_h = max(1, int(round(oh * scale)))
     return cv2.resize(overlay, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-
 def crop_to_content(overlay_rgba, alpha_thresh=10, margin=4):
     if overlay_rgba.shape[2] < 4:
         return overlay_rgba
@@ -59,27 +61,6 @@ def crop_to_content(overlay_rgba, alpha_thresh=10, margin=4):
     y1 = max(ys.min() - margin, 0)
     y2 = min(ys.max() + margin, overlay_rgba.shape[0])
     return overlay_rgba[y1:y2, x1:x2]
-
-
-def detect_banner_box(img, sample_x=40):
-    h, w = img.shape[:2]
-    col = img[:, sample_x, :].astype(int)
-    search_zone = col[int(h * 0.85):int(h * 0.99)]
-    counter = Counter(tuple(c) for c in search_zone)
-    banner_left_color = np.array(counter.most_common(1)[0][0])
-    matches_y = np.where(np.abs(col - banner_left_color).sum(axis=1) < 10)[0]
-    y1, y2 = int(matches_y.min()), int(matches_y.max())
-    mid_y = (y1 + y2) // 2
-    row = img[mid_y, :, :].astype(int)
-    above_row = img[max(y1 - 20, 0), :, :].astype(int)
-    counter2 = Counter(tuple(c) for c in above_row)
-    bg_color = np.array(counter2.most_common(1)[0][0])
-    diffs = np.abs(row - bg_color).sum(axis=1)
-    inside = np.where(diffs > 25)[0]
-    if len(inside) == 0:
-        return 0, y1, w, y2
-    return int(inside.min()), y1, int(inside.max()), y2
-
 
 def detect_logo_box(img):
     """Phát hiện layout dựa vào màu nền xanh đậm đặc trưng tại 2 vị trí."""
@@ -110,8 +91,6 @@ def detect_logo_box(img):
     else:
         print("=> Layout: LOGO BÊN PHẢI")
         return LOGO_BOX_RIGHT
-
-
 # =========================
 # HÀM CHÍNH
 # =========================
@@ -148,8 +127,8 @@ def process_image(image_url: str, output_path: str):
     print(f"Đã dán logo Zeno: {zw}x{zh} tại ({zx},{zy})")
 
     # --- 2) Thay hotline ---
-    bx1, by1, bx2, by2 = detect_banner_box(img)
-    print(f"Banner: ({bx1},{by1}) -> ({bx2},{by2})")
+    bx1, by1, bx2, by2 = BANNER_BOX
+    print(f"Banner (cố định): ({bx1},{by1}) -> ({bx2},{by2})")
     banner_w, banner_h = bx2 - bx1, by2 - by1
 
     mid_y = (by1 + by2) // 2
@@ -174,8 +153,6 @@ def process_image(image_url: str, output_path: str):
 
     cv2.imwrite(output_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
     print(f"Đã lưu: {output_path}")
-
-
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage: python process.py <image_url> <output_path>")
