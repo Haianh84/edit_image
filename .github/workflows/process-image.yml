@@ -1,4 +1,5 @@
 name: Process Image
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,41 +12,47 @@ on:
         required: false
         default: "output"
         type: string
+
 jobs:
   process:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
       - name: Cache pip dependencies
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: pip-opencv-numpy-v1
+
       - name: Install dependencies
         run: pip install --quiet opencv-python-headless numpy
+
       - name: Run image processor
         run: |
           python process.py "${{ inputs.image_url }}" "result_${{ inputs.job_id }}.jpg"
+
       - name: Upload result to GitHub Release
         id: upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FILENAME="result_${{ inputs.job_id }}.jpg"
-          TAG="${{ inputs.job_id }}"
-
-          # Xoá release/tag cũ nếu đã tồn tại (cho phép chạy lại cùng job_id)
-          gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
+          TAG="result-${{ inputs.job_id }}"
 
           gh release create "$TAG" "$FILENAME" \
             --title "Result: ${{ inputs.job_id }}" \
             --notes "Ảnh được xử lý từ: ${{ inputs.image_url }}" \
             --repo "${{ github.repository }}"
+
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${FILENAME}"
           echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "✅ LINK ẢNH KẾT QUẢ: $DOWNLOAD_URL"
+
       - name: Print result link
         run: |
-          echo "${{ steps.upload.outputs.download_url }}"
+          echo "🔗 Link tải ảnh: ${{ steps.upload.outputs.download_url }}"
