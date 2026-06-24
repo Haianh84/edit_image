@@ -112,7 +112,23 @@ def process_image(image_url: str, output_path: str):
     lx1, ly1, lx2, ly2 = logo_box
     logo_w, logo_h = lx2 - lx1, ly2 - ly1
 
-    bg_color = [32, 64, 7]
+    # Lấy màu nền thực tế từ pixel ngay bên cạnh vùng logo (không hardcode)
+    sample_points = []
+    if lx1 > 5:
+        # Lấy mẫu bên trái vùng logo
+        for dy in range(0, logo_h, max(1, logo_h // 8)):
+            sample_points.append(img[ly1 + dy, lx1 - 5])
+    if lx2 < img_w - 5:
+        # Lấy mẫu bên phải vùng logo
+        for dy in range(0, logo_h, max(1, logo_h // 8)):
+            sample_points.append(img[ly1 + dy, lx2 + 5])
+    if ly1 > 5:
+        # Lấy mẫu phía trên vùng logo
+        for dx in range(0, logo_w, max(1, logo_w // 8)):
+            sample_points.append(img[ly1 - 5, lx1 + dx])
+
+    bg_color = np.median(sample_points, axis=0).astype(int).tolist()
+    print(f"Màu nền lấy từ ảnh: BGR={bg_color}")
     cv2.rectangle(img, (lx1, ly1), (lx2, ly2), bg_color, -1)
 
     zeno = cv2.imread(ZENO_LOGO, cv2.IMREAD_UNCHANGED)
