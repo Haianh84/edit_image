@@ -240,10 +240,12 @@ def process_image(image_url: str, output_path: str):
     )
 
     # giữ nguyên nền banner gốc, chỉ đè hotline lên
+    LEFT_OFFSET = 3
+
     paste_rgba(
         img,
         hotline_fit,
-        bx1,
+        bx1 - LEFT_OFFSET,
         by1
     )
 
