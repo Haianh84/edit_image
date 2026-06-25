@@ -17,7 +17,7 @@ PACIFIC_LOGO = os.path.join(ASSETS_DIR, "logo_pacific.png") # Thêm logo gốc �
 # =========================
 LOGO_PCT_LEFT  = (24/905, 587/1280, 440/905, 680/1280)
 LOGO_PCT_RIGHT = (540/905, 420/1280, 775/905, 482/1280)
-BANNER_PCT = (24/905, 1184/1280, 878/905, 1251/1280)
+BANNER_PCT = (24/905, 1184/1280, 887/905, 1251/1280)
 
 # Ngưỡng điểm match tối thiểu để tin vào kết quả auto-detect logo.
 LOGO_MATCH_MIN_SCORE = 0.40
