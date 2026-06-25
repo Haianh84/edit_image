@@ -235,7 +235,7 @@ def process_image(image_url: str, output_path: str):
     if hotline is None:
         raise FileNotFoundError(f"Không đọc được {HOTLINE_PNG}")
     hotline = crop_to_content(hotline)
-    hotline_fit = fit_resize(hotline, int(banner_w * 0.78), int(banner_h * 0.82))
+    hotline_fit = fit_resize(hotline, int(banner_w * 0.98), int(banner_h * 0.98))
     hh, hw = hotline_fit.shape[:2]
     hx = bx1 + (banner_w - hw) // 2
     hy = by1 + (banner_h - hh) // 2
