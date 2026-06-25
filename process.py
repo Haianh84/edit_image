@@ -10,19 +10,17 @@ import os
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ZENO_LOGO   = os.path.join(ASSETS_DIR, "logo_zenohomes.png")
 HOTLINE_PNG = os.path.join(ASSETS_DIR, "hotline.png")
+PACIFIC_LOGO = os.path.join(ASSETS_DIR, "logo_pacific.png") # Thêm logo gốc để dò tìm
 
 # =========================
-# TỶ LỆ TỌA ĐỘ CHUẨN (Tính toán dựa trên ảnh gốc mẫu 905 x 1280)
-# Công thức: tỷ lệ = tọa độ / kích thước gốc
+# TỶ LỆ TỌA ĐỘ CHUẨN & THÔNG SỐ
 # =========================
-# LOGO_BOX = (x1, y1, x2, y2)
-# Mẫu trái: (24, 587, 440, 680)
 LOGO_PCT_LEFT  = (24/905, 587/1280, 440/905, 680/1280)
-# Mẫu phải: (540, 420, 775, 482)
 LOGO_PCT_RIGHT = (540/905, 420/1280, 775/905, 482/1280)
-
-# BANNER_BOX = (x1, y1, x2, y2) -> Mẫu: (24, 1184, 878, 1251)
 BANNER_PCT = (24/905, 1184/1280, 878/905, 1251/1280)
+
+# Ngưỡng điểm match tối thiểu để tin vào kết quả auto-detect logo.
+LOGO_MATCH_MIN_SCORE = 0.40
 
 # =========================
 # HÀM TIỆN ÍCH
@@ -70,38 +68,100 @@ def get_absolute_box(pct_box, img_w, img_h):
     y1 = int(pct_box[1] * img_h)
     x2 = int(pct_box[2] * img_w)
     y2 = int(pct_box[3] * img_h)
-    # Giới hạn không vượt quá biên ảnh
     return (max(0, x1), max(0, y1), min(img_w - 1, x2), min(img_h - 1, y2))
 
-def detect_logo_box(img, img_w, img_h):
-    """Phát hiện layout dựa vào màu nền xanh đậm đặc trưng tại 2 vị trí."""
+# =========================
+# LOGIC AUTO-DETECT LOGO MỚI
+# =========================
+
+def _load_logo_template_mask():
+    logo = cv2.imread(PACIFIC_LOGO, cv2.IMREAD_UNCHANGED)
+    if logo is None or logo.shape[2] < 4:
+        return None
+    alpha_full = logo[:, :, 3]
+    ys, xs = np.where(alpha_full > 10)
+    if len(xs) == 0:
+        return None
+    x1, x2 = xs.min(), xs.max()
+    y1, y2 = ys.min(), ys.max()
+    alpha_cropped = alpha_full[y1:y2+1, x1:x2+1]
+    _, binmask = cv2.threshold(alpha_cropped, 30, 255, cv2.THRESH_BINARY)
+    return binmask.astype(np.float32)
+
+def _img_to_gold_mask_f32(img):
+    b = img[:, :, 0].astype(int)
+    g = img[:, :, 1].astype(int)
+    r = img[:, :, 2].astype(int)
+    mask = (r > 110) & (g > 80) & (b < 170) & (r >= b + 15)
+    return (mask.astype(np.uint8) * 255).astype(np.float32)
+
+def detect_logo_box_auto(img, img_w, img_h):
+    template_mask = _load_logo_template_mask()
+    if template_mask is None:
+        return None, 0.0
+
+    gold_mask = _img_to_gold_mask_f32(img)
+    th0, tw0 = template_mask.shape
+
+    target_widths = np.linspace(0.12 * img_w, 0.55 * img_w, 50)
+    scale_factors = target_widths / tw0
+
+    best = None
+    for scale in scale_factors:
+        tw = max(8, int(tw0 * scale))
+        th = max(4, int(th0 * scale))
+        if tw >= img_w or th >= img_h or tw < 8 or th < 4:
+            continue
+        tmpl_resized = cv2.resize(template_mask, (tw, th))
+        res = cv2.matchTemplate(gold_mask, tmpl_resized, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(res)
+        if best is None or max_val > best[0]:
+            best = (max_val, max_loc, tw, th)
+
+    if best is None:
+        return None, 0.0
+
+    score, (x, y), tw, th = best
+
+    margin_x = max(4, int(tw * 0.06))
+    margin_y = max(4, int(th * 0.18))
+    x1 = max(0, x - margin_x)
+    y1 = max(0, y - margin_y)
+    x2 = min(img_w - 1, x + tw + margin_x)
+    y2 = min(img_h - 1, y + th + margin_y)
+
+    return (x1, y1, x2, y2), score
+
+def detect_logo_box_fallback(img, img_w, img_h):
     box_left = get_absolute_box(LOGO_PCT_LEFT, img_w, img_h)
     box_right = get_absolute_box(LOGO_PCT_RIGHT, img_w, img_h)
 
     lx1, ly1, lx2, ly2 = box_left
     rx1, ry1, rx2, ry2 = box_right
 
-    mid_lx = (lx1 + lx2) // 2
-    mid_ly = (ly1 + ly2) // 2
-    mid_rx = (rx1 + rx2) // 2
-    mid_ry = (ry1 + ry2) // 2
+    mid_lx, mid_ly = (lx1 + lx2) // 2, (ly1 + ly2) // 2
+    mid_rx, mid_ry = (rx1 + rx2) // 2, (ry1 + ry2) // 2
 
     bg_green = np.array([32, 64, 7])
-
     color_left  = img[mid_ly, mid_lx].astype(int)
     color_right = img[min(mid_ry, img_h - 1), min(mid_rx, img_w - 1)].astype(int)
 
     diff_left  = np.abs(color_left  - bg_green).sum()
     diff_right = np.abs(color_right - bg_green).sum()
 
-    print(f"Diff to green - LEFT: {diff_left} | RIGHT: {diff_right}")
+    print(f"[Fallback] Diff to green - LEFT: {diff_left} | RIGHT: {diff_right}")
+    return box_left if diff_left <= diff_right else box_right
 
-    if diff_left <= diff_right:
-        print("=> Layout: LOGO BÊN TRÁI")
-        return box_left
-    else:
-        print("=> Layout: LOGO BÊN PHẢI")
-        return box_right
+def detect_logo_box(img, img_w, img_h):
+    auto_box, score = detect_logo_box_auto(img, img_w, img_h)
+    print(f"[Auto-detect] Logo box: {auto_box} | score={score:.3f}")
+
+    if auto_box is not None and score >= LOGO_MATCH_MIN_SCORE:
+        print("=> Dùng vị trí logo AUTO-DETECT.")
+        return auto_box
+
+    print("=> Điểm auto-detect thấp, dùng phương án dự phòng.")
+    return detect_logo_box_fallback(img, img_w, img_h)
 
 # =========================
 # HÀM CHÍNH
@@ -137,7 +197,7 @@ def process_image(image_url: str, output_path: str):
             sample_points.append(img[ly1 - 5, lx1 + dx])
 
     if len(sample_points) == 0:
-        sample_points.append([32, 64, 7]) # Fallback màu mặc định nếu không lấy được mẫu
+        sample_points.append([32, 64, 7]) # Fallback màu mặc định
 
     bg_color = np.median(sample_points, axis=0).astype(int).tolist()
     print(f"Màu nền lấy từ ảnh: BGR={bg_color}")
@@ -160,7 +220,6 @@ def process_image(image_url: str, output_path: str):
     banner_w, banner_h = bx2 - bx1, by2 - by1
 
     mid_y = (by1 + by2) // 2
-    # Đảm bảo điểm lấy mẫu không bị vọt ra ngoài biên ảnh
     sample_x_left = min(bx1 + 5, img_w - 1)
     sample_x_right = max(bx2 - 5, 0)
     
