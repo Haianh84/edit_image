@@ -217,37 +217,30 @@ def process_image(image_url: str, output_path: str):
     # --- 2) Thay hotline ---
     bx1, by1, bx2, by2 = get_absolute_box(BANNER_PCT, img_w, img_h)
     print(f"Banner (tính theo tỷ lệ): ({bx1},{by1}) -> ({bx2},{by2})")
+    banner_w, banner_h = bx2 - bx1, by2 - by1
 
-    banner_w = bx2 - bx1
-    banner_h = by2 - by1
+    mid_y = (by1 + by2) // 2
+    sample_x_left = min(bx1 + 5, img_w - 1)
+    sample_x_right = max(bx2 - 5, 0)
+    
+    color_left_real  = img[mid_y, sample_x_left].astype(np.float64)
+    color_right_real = img[mid_y, sample_x_right].astype(np.float64)
+
+    gradient = np.zeros((banner_h, banner_w, 3), dtype=np.uint8)
+    t = np.linspace(0, 1, banner_w).reshape(1, -1, 1)
+    gradient[:] = (color_left_real * (1 - t) + color_right_real * t).astype(np.uint8)
+    img[by1:by2, bx1:bx2] = gradient
 
     hotline = cv2.imread(HOTLINE_PNG, cv2.IMREAD_UNCHANGED)
     if hotline is None:
         raise FileNotFoundError(f"Không đọc được {HOTLINE_PNG}")
-
-    # crop sát nội dung
-    hotline = crop_to_content(
-        hotline,
-        alpha_thresh=1,
-        margin=0
-    )
-
-    # kéo full chiều ngang banner
-    hotline_fit = cv2.resize(
-        hotline,
-        (banner_w, banner_h),
-        interpolation=cv2.INTER_AREA
-    )
-
-    # giữ nguyên nền banner gốc, chỉ đè hotline lên
-    paste_rgba(
-        img,
-        hotline_fit,
-        bx1,
-        by1
-    )
-
-    print(f"Đã dán hotline full banner: {banner_w}x{banner_h}")
+    hotline = crop_to_content(hotline)
+    hotline_fit = fit_resize(hotline, int(banner_w * 0.78), int(banner_h * 0.82))
+    hh, hw = hotline_fit.shape[:2]
+    hx = bx1 + (banner_w - hw) // 2
+    hy = by1 + (banner_h - hh) // 2
+    paste_rgba(img, hotline_fit, hx, hy)
+    print(f"Đã dán hotline: {hw}x{hh} tại ({hx},{hy})")
 
     cv2.imwrite(output_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
     print(f"Đã lưu thành công: {output_path}")
