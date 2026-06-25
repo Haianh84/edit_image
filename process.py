@@ -9,13 +9,14 @@ import os
 # =========================
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ZENO_LOGO   = os.path.join(ASSETS_DIR, "logo_zenohomes.png")
-PACIFIC_LOGO = os.path.join(ASSETS_DIR, "logo_pacific.png") # Dùng để dò tìm vị trí logo gốc
+PACIFIC_LOGO = os.path.join(ASSETS_DIR, "logo_pacific.png") 
 
 # =========================
-# TỶ LỆ TỌA ĐỘ DỰ PHÒNG (Chỉ dùng khi tính năng tự động tìm kiếm thất bại)
+# TỶ LỆ TỌA ĐỘ 
 # =========================
 LOGO_PCT_LEFT  = (24/905, 587/1280, 440/905, 680/1280)
 LOGO_PCT_RIGHT = (540/905, 420/1280, 775/905, 482/1280)
+# Tọa độ chuẩn của banner hotline (lọt lòng viền xanh)
 BANNER_PCT     = (24/905, 1184/1280, 878/905, 1251/1280)
 
 LOGO_MATCH_MIN_SCORE = 0.40
@@ -66,10 +67,6 @@ def get_absolute_box(pct_box, img_w, img_h):
     x2 = int(pct_box[2] * img_w)
     y2 = int(pct_box[3] * img_h)
     return (max(0, x1), max(0, y1), min(img_w - 1, x2), min(img_h - 1, y2))
-
-def is_gold_pixel(b, g, r):
-    """Nhận diện đặc trưng màu vàng/gold của banner đáy Pacific Homes (BGR)."""
-    return (r > 110) and (g > 80) and (b < 170) and (r >= b + 15)
 
 # =========================
 # LOGIC TỰ ĐỘNG DÒ TÌM LOGO
@@ -153,67 +150,6 @@ def detect_logo_box_fallback(img, img_w, img_h):
     return box_left if diff_left <= diff_right else box_right
 
 # =========================
-# LOGIC TỰ ĐỘNG DÒ TÌM BANNER HOTLINE
-# =========================
-
-def detect_banner_box(img, img_w, img_h):
-    """Tự động quét tìm dải màu vàng đặc trưng ở đáy ảnh để xác định vùng banner hotline."""
-    margin = max(2, int(img_w * 0.04))
-    x_right_sample = img_w - margin - 5
-    if x_right_sample <= 0:
-        x_right_sample = img_w - 1
-
-    search_top = int(img_h * 0.5)  # Tìm ở nửa dưới ảnh
-    rows = []
-    for y in range(img_h - 1, search_top, -1):
-        b, g, r = img[y, x_right_sample].astype(int)
-        rows.append((y, is_gold_pixel(b, g, r)))
-
-    i = 0
-    while i < len(rows) and not rows[i][1]:
-        i += 1
-    if i >= len(rows):
-        print("=> Không tự động quét được banner, dùng tọa độ tỷ lệ cố định.")
-        return get_absolute_box(BANNER_PCT, img_w, img_h)
-
-    j = i
-    miss = 0
-    last_gold_y = rows[i][0]
-    while j < len(rows):
-        y, gold = rows[j]
-        if gold:
-            miss = 0
-            last_gold_y = y
-        else:
-            miss += 1
-            if miss > 4:
-                break
-        j += 1
-
-    by1 = last_gold_y
-    max_extra = 14
-    margin_safe = margin + 5 if margin + 5 < img_w else margin
-    bg_sample_y = min(img_h - 1, last_gold_y + 2)
-    bg_color = img[bg_sample_y, margin_safe].astype(np.float64)
-
-    for extra in range(1, max_extra + 1):
-        y = last_gold_y - extra
-        if y < 0:
-            break
-        row = img[y, margin:img_w - margin].astype(np.float64)
-        diff = np.abs(row - bg_color).sum(axis=1)
-        ratio_diff = (diff > 40).mean()
-        if ratio_diff > 0.15:
-            break
-        by1 = y
-
-    by2 = img_h
-    bx1 = margin
-    bx2 = img_w - margin
-    print(f"=> Dùng vị trí banner AUTO-DETECT: ({bx1}, {by1}) -> ({bx2}, {by2})")
-    return (bx1, by1, bx2, by2)
-
-# =========================
 # HÀM XỬ LÝ CHÍNH
 # =========================
 
@@ -234,7 +170,6 @@ def process_image(image_url: str, output_path: str):
     lx1, ly1, lx2, ly2 = logo_box
     logo_w, logo_h = lx2 - lx1, ly2 - ly1
 
-    # Lấy mẫu màu nền xung quanh logo gốc để xóa sạch hoàn hảo
     sample_points = []
     if lx1 > 5:
         for dy in range(0, logo_h, max(1, logo_h // 8)):
@@ -252,7 +187,6 @@ def process_image(image_url: str, output_path: str):
     bg_color = np.median(sample_points, axis=0).astype(int).tolist()
     cv2.rectangle(img, (lx1, ly1), (lx2, ly2), bg_color, -1)
 
-    # Chèn logo Zeno Homes mới vào vùng đã dọn sạch
     zeno = cv2.imread(ZENO_LOGO, cv2.IMREAD_UNCHANGED)
     if zeno is None:
         raise FileNotFoundError(f"Không đọc được {ZENO_LOGO}")
@@ -264,8 +198,9 @@ def process_image(image_url: str, output_path: str):
     paste_rgba(img, zeno_fit, zx, zy)
     print(f"Đã cập nhật logo Zeno thành công tại vị trí ({zx},{zy})")
 
-    # --- 2) Xóa Hotline cũ bằng dải màu gradient (Không chèn thông tin mới) ---
-    bx1, by1, bx2, by2 = detect_banner_box(img, img_w, img_h)
+    # --- 2) Xóa Hotline cũ bằng dải màu gradient ---
+    # Sử dụng khung tọa độ cố định chuẩn (BANNER_PCT) để tránh bị tràn viền
+    bx1, by1, bx2, by2 = get_absolute_box(BANNER_PCT, img_w, img_h)
     banner_w, banner_h = bx2 - bx1, by2 - by1
 
     if banner_w > 0 and banner_h > 0:
@@ -273,21 +208,19 @@ def process_image(image_url: str, output_path: str):
         sample_x_left = min(bx1 + 5, img_w - 1)
         sample_x_right = max(bx2 - 5, 0)
         
-        # Đo sắc độ màu thực tế ở hai rìa trái/phải của dải banner gốc
         color_left_real  = img[mid_y, sample_x_left].astype(np.float64)
         color_right_real = img[mid_y, sample_x_right].astype(np.float64)
 
-        # Tạo và vẽ lại một dải màu mượt chuyển tiếp (Xanh đậm -> Vàng Gold) đè lên
-        # Hành động này sẽ xóa hoàn toàn chữ Hotline cũ mà không để lại vết lỗi
         gradient = np.zeros((banner_h, banner_w, 3), dtype=np.uint8)
         t = np.linspace(0, 1, banner_w).reshape(1, -1, 1)
         gradient[:] = (color_left_real * (1 - t) + color_right_real * t).astype(np.uint8)
+        
         img[by1:by2, bx1:bx2] = gradient
-        print("=> Đã phủ dải màu mượt xóa sạch hotline cũ và để trống thông tin.")
+        print("=> Đã phủ dải màu mượt xóa sạch hotline cũ trong khuôn khổ chuẩn.")
     else:
-        print("=> Bỏ qua bước xử lý hotline do không quét được vùng phù hợp.")
+        print("=> Lỗi kích thước banner.")
 
-    # Xuất ảnh kết quả chất lượng cao
+    # Xuất ảnh kết quả 
     cv2.imwrite(output_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
     print(f"Đã hoàn thành và lưu ảnh tại: {output_path}")
 
