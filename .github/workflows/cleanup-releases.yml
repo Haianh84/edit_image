@@ -1,0 +1,55 @@
+name: Cleanup Old Releases
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # Chạy lúc 2:00 UTC mỗi ngày
+  workflow_dispatch:        # Cho phép chạy thủ công để test
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Xóa releases cũ hơn 7 ngày
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "🔍 Đang tìm releases cũ hơn 7 ngày..."
+
+          # Tính mốc thời gian 2 ngày trước (Unix timestamp)
+          CUTOFF=$(date -d "7 days ago" +%s)
+
+          # Lấy danh sách tất cả releases (phân trang, tối đa 100)
+          PAGE=1
+          DELETED=0
+
+          while true; do
+            RELEASES=$(gh api \
+              "repos/$REPO/releases?per_page=100&page=$PAGE" \
+              --jq '.[] | "\(.id) \(.tag_name) \(.created_at)"')
+
+            [ -z "$RELEASES" ] && break
+
+            while IFS= read -r line; do
+              RELEASE_ID=$(echo "$line" | awk '{print $1}')
+              TAG=$(echo "$line" | awk '{print $2}')
+              CREATED_AT=$(echo "$line" | awk '{print $3}')
+
+              # Chuyển created_at sang Unix timestamp
+              CREATED_TS=$(date -d "$CREATED_AT" +%s 2>/dev/null || echo 0)
+
+              if [ "$CREATED_TS" -lt "$CUTOFF" ]; then
+                echo "🗑️  Xóa: $TAG (tạo lúc $CREATED_AT)"
+                gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
+                DELETED=$((DELETED + 1))
+              fi
+            done <<< "$RELEASES"
+
+            PAGE=$((PAGE + 1))
+          done
+
+          echo ""
+          echo "✅ Hoàn thành! Đã xóa $DELETED release(s)."
